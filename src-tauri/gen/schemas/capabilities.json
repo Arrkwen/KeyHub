@@ -1,0 +1,1 @@
+{"main-capability":{"identifier":"main-capability","description":"Capability for the KeyHub main window","local":true,"windows":["main"],"permissions":["core:default","core:app:default","core:event:default","core:path:default","core:window:default"]}}
