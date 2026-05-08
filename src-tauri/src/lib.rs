@@ -8,7 +8,24 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 use zeroize::Zeroize;
 
-use vault::{change_master_password, create_vault_file, decrypt_entries, delete_entry, read_snapshot, read_vault, replace_snapshot, upsert_entry, verify_password, write_vault, EntryInput, EntryPayload, VaultStatus};
+use vault::{
+    change_master_password, create_vault_file, decrypt_entries, delete_entry, read_snapshot, read_vault, replace_snapshot,
+    sanitize_password_hint, upsert_entry, verify_password, write_vault, now_iso,
+    EntryInput, EntryPayload, VaultStatus,
+};
+
+const MASTER_PASSWORD_CHAR_LEN: usize = 10;
+
+fn validate_master_password_len(password: &str) -> Result<(), String> {
+    let n = password.chars().count();
+    if n != MASTER_PASSWORD_CHAR_LEN {
+        return Err(format!(
+            "主密码必须为 {} 位字符（当前 {} 位）",
+            MASTER_PASSWORD_CHAR_LEN, n
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Default)]
 struct SessionState {
@@ -48,6 +65,7 @@ fn build_status(app: &AppHandle, state: &State<AppState>) -> Result<VaultStatus,
             has_vault: false,
             unlocked: false,
             entry_count: 0,
+            password_hint: String::new(),
             app_data_dir: Some(app_dir.display().to_string()),
             vault_path: Some(vault_path.display().to_string()),
         });
@@ -58,6 +76,7 @@ fn build_status(app: &AppHandle, state: &State<AppState>) -> Result<VaultStatus,
         has_vault: true,
         unlocked,
         entry_count: vault.entries.len(),
+        password_hint: vault.password_hint.clone(),
         app_data_dir: Some(app_dir.display().to_string()),
         vault_path: Some(vault_path.display().to_string()),
     })
@@ -91,6 +110,7 @@ fn create_vault(
     app: AppHandle,
     state: State<AppState>,
     master_password: String,
+    password_hint: Option<String>,
 ) -> Result<VaultStatus, String> {
     let vault_path = vault_file_path(&app)?;
 
@@ -98,7 +118,9 @@ fn create_vault(
         return Err("vault already exists".to_string());
     }
 
-    let (vault, key) = create_vault_file(&master_password).map_err(|err| err.to_string())?;
+    let hint = password_hint.unwrap_or_default();
+    validate_master_password_len(&master_password)?;
+    let (vault, key) = create_vault_file(&master_password, &hint).map_err(|err| err.to_string())?;
     write_vault(&vault_path, &vault).map_err(|err| err.to_string())?;
 
     set_session_key(&state, key)?;
@@ -114,6 +136,7 @@ fn unlock_vault(
 ) -> Result<VaultStatus, String> {
     let vault_path = vault_file_path(&app)?;
     let vault = read_vault(&vault_path).map_err(|err| err.to_string())?;
+    validate_master_password_len(&master_password)?;
     let key = verify_password(&vault, &master_password).map_err(|_| "主密码不正确".to_string())?;
 
     set_session_key(&state, key)?;
@@ -205,12 +228,28 @@ fn change_vault_master_password(
     current_password: String,
     new_password: String,
 ) -> Result<VaultStatus, String> {
+    validate_master_password_len(&new_password)?;
     let vault_path = vault_file_path(&app)?;
     let mut vault = read_vault(&vault_path).map_err(|err| err.to_string())?;
     let new_key = change_master_password(&mut vault, &current_password, &new_password)
         .map_err(|_| "当前主密码不正确".to_string())?;
     write_vault(&vault_path, &vault).map_err(|err| err.to_string())?;
     set_session_key(&state, new_key)?;
+    build_status(&app, &state)
+}
+
+#[tauri::command]
+fn set_vault_password_hint(
+    app: AppHandle,
+    state: State<AppState>,
+    password_hint: Option<String>,
+) -> Result<VaultStatus, String> {
+    let _key = with_key(&state)?;
+    let vault_path = vault_file_path(&app)?;
+    let mut vault = read_vault(&vault_path).map_err(|err| err.to_string())?;
+    vault.password_hint = sanitize_password_hint(password_hint.as_deref().unwrap_or(""));
+    vault.updated_at = now_iso();
+    write_vault(&vault_path, &vault).map_err(|err| err.to_string())?;
     build_status(&app, &state)
 }
 
@@ -260,6 +299,7 @@ pub fn run() {
             export_encrypted_snapshot,
             import_encrypted_snapshot,
             change_vault_master_password,
+            set_vault_password_hint,
             reset_vault,
             save_exported_backup
         ])

@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0 --port 1420",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "icons": "tauri icon ./src-tauri/app-icon-source.png -o ./src-tauri/icons && node ./src-tauri/scripts/prune-icons.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

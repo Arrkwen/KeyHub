@@ -5,8 +5,14 @@ export async function getVaultStatus(): Promise<VaultStatus> {
   return invoke("get_vault_status");
 }
 
-export async function createVault(masterPassword: string): Promise<VaultStatus> {
-  return invoke("create_vault", { masterPassword });
+export async function createVault(
+  masterPassword: string,
+  passwordHint?: string | null
+): Promise<VaultStatus> {
+  return invoke("create_vault", {
+    masterPassword,
+    passwordHint: passwordHint?.trim() ? passwordHint.trim() : null
+  });
 }
 
 export async function unlockVault(masterPassword: string): Promise<VaultStatus> {
@@ -54,6 +60,12 @@ export async function changeVaultMasterPassword(
   return invoke("change_vault_master_password", {
     currentPassword,
     newPassword
+  });
+}
+
+export async function setVaultPasswordHint(passwordHint: string): Promise<VaultStatus> {
+  return invoke("set_vault_password_hint", {
+    passwordHint: passwordHint.trim() ? passwordHint.trim() : null
   });
 }
 

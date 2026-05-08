@@ -14,6 +14,7 @@ import {
   resetVault,
   saveEntry,
   saveExportedBackup,
+  setVaultPasswordHint,
   unlockVault
 } from "./lib/tauri";
 import type { EntryInput, VaultEntry, VaultStatus } from "./types";
@@ -23,8 +24,19 @@ const clipboardStorageKey = "keyhub:clipboard-clear-seconds";
 const rememberedPasswordStorageKey = "keyhub:remembered-master-password";
 const rememberedPasswordDurationMs = 3 * 24 * 60 * 60 * 1000;
 const themeStorageKey = "keyhub:theme";
+const passwordHintMaxLength = 280;
+/** 主密码固定长度（按 Unicode 码点计，与 Rust 端一致） */
+const masterPasswordCharLength = 10;
 
 type ThemeMode = "dark" | "light";
+
+function masterPasswordCharCount(value: string): number {
+  return [...value].length;
+}
+
+function isValidMasterPasswordLength(value: string): boolean {
+  return masterPasswordCharCount(value) === masterPasswordCharLength;
+}
 
 function readNumberSetting(key: string, fallback: number) {
   const value = window.localStorage.getItem(key);
@@ -87,6 +99,11 @@ function loadRememberedPassword(): RememberedPasswordState {
       return { password: null, expired: true };
     }
 
+    if (!isValidMasterPasswordLength(parsed.password)) {
+      window.localStorage.removeItem(rememberedPasswordStorageKey);
+      return { password: null, expired: false };
+    }
+
     return { password: parsed.password, expired: false };
   } catch {
     window.localStorage.removeItem(rememberedPasswordStorageKey);
@@ -95,6 +112,11 @@ function loadRememberedPassword(): RememberedPasswordState {
 }
 
 function saveRememberedPassword(password: string) {
+  if (!isValidMasterPasswordLength(password)) {
+    clearRememberedPassword();
+    return;
+  }
+
   window.localStorage.setItem(
     rememberedPasswordStorageKey,
     JSON.stringify({
@@ -116,6 +138,7 @@ interface PasswordFieldProps {
   visible: boolean;
   onToggle: () => void;
   hideLabel?: boolean;
+  maxLength?: number;
 }
 
 function PasswordField({
@@ -125,7 +148,8 @@ function PasswordField({
   placeholder,
   visible,
   onToggle,
-  hideLabel = false
+  hideLabel = false,
+  maxLength
 }: PasswordFieldProps) {
   return (
     <label className={hideLabel ? "password-field compact-password-field" : "password-field"}>
@@ -135,6 +159,7 @@ function PasswordField({
           aria-label={label}
           type={visible ? "text" : "password"}
           value={value}
+          maxLength={maxLength}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
         />
@@ -221,9 +246,12 @@ export default function App() {
 
   const [masterPassword, setMasterPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [masterPasswordHint, setMasterPasswordHint] = useState("");
   const [unlockPassword, setUnlockPassword] = useState("");
   const [rememberPassword, setRememberPassword] = useState(false);
   const [confirmResetStep, setConfirmResetStep] = useState(false);
+
+  const [passwordHintDraft, setPasswordHintDraft] = useState("");
 
   const [changeCurrentPassword, setChangeCurrentPassword] = useState("");
   const [changeNewPassword, setChangeNewPassword] = useState("");
@@ -383,13 +411,19 @@ export default function App() {
     };
   }, [autoLockMinutes, status?.unlocked]);
 
+  useEffect(() => {
+    if (settingsOpen && status?.unlocked) {
+      setPasswordHintDraft(status.password_hint ?? "");
+    }
+  }, [settingsOpen, status?.password_hint, status?.unlocked]);
+
   async function handleCreateVault(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setBanner(null);
 
-    if (masterPassword.length < 10) {
-      setError("主密码至少需要 10 位。");
+    if (!isValidMasterPasswordLength(masterPassword)) {
+      setError(`主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(masterPassword)} 位）。`);
       return;
     }
 
@@ -400,7 +434,8 @@ export default function App() {
 
     setBusy(true);
     try {
-      const nextStatus = await createVault(masterPassword);
+      const hint = masterPasswordHint.trim();
+      const nextStatus = await createVault(masterPassword, hint || null);
       setStatus(nextStatus);
       setSessionPassword(masterPassword);
       setEntries([]);
@@ -418,6 +453,7 @@ export default function App() {
 
       setMasterPassword("");
       setConfirmPassword("");
+      setMasterPasswordHint("");
       setBanner("本地保险库已创建并解锁。");
     } catch (reason) {
       console.error("create vault failed", reason);
@@ -434,6 +470,11 @@ export default function App() {
 
     if (!unlockPassword.trim()) {
       setError("请输入主密码。");
+      return;
+    }
+
+    if (!isValidMasterPasswordLength(unlockPassword)) {
+      setError(`主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(unlockPassword)} 位）。`);
       return;
     }
 
@@ -521,13 +562,31 @@ export default function App() {
     }
   }
 
+  async function handleSavePasswordHint() {
+    setError(null);
+    setBanner(null);
+    setBusy(true);
+    try {
+      const nextStatus = await setVaultPasswordHint(passwordHintDraft);
+      setStatus(nextStatus);
+      setBanner("主密码提示已保存。");
+    } catch (reason) {
+      console.error("save password hint failed", reason);
+      setError(getErrorMessage(reason, "保存主密码提示失败。"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleChangeMasterPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setBanner(null);
 
-    if (changeNewPassword.length < 10) {
-      setError("新主密码至少需要 10 位。");
+    if (!isValidMasterPasswordLength(changeNewPassword)) {
+      setError(
+        `新主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(changeNewPassword)} 位）。`
+      );
       return;
     }
 
@@ -619,11 +678,20 @@ export default function App() {
     }
   }
 
-  async function handleResetVault() {
+  function startVaultResetFlow() {
+    setConfirmResetStep(true);
+    setError(null);
+    setBanner(null);
+  }
+
+  function cancelVaultResetFlow() {
+    setConfirmResetStep(false);
+    setBanner(null);
+    setError(null);
+  }
+
+  async function handleConfirmResetVault() {
     if (!confirmResetStep) {
-      setConfirmResetStep(true);
-      setError(null);
-      setBanner("再次点击“确认重置本地保险库”才会真正删除本地数据。");
       return;
     }
 
@@ -767,17 +835,31 @@ export default function App() {
                 label="主密码"
                 value={masterPassword}
                 onChange={setMasterPassword}
-                placeholder="至少 10 位"
+                placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
                 visible={Boolean(showPasswords.createMaster)}
                 onToggle={() => togglePasswordVisibility("createMaster")}
+                maxLength={masterPasswordCharLength}
               />
               <PasswordField
                 label="确认主密码"
                 value={confirmPassword}
                 onChange={setConfirmPassword}
+                placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
                 visible={Boolean(showPasswords.createConfirm)}
                 onToggle={() => togglePasswordVisibility("createConfirm")}
+                maxLength={masterPasswordCharLength}
               />
+              <label>
+                主密码提示（可选）
+                <p className="hint-field-note">当你忘记主密码时，能够通过提示找回。</p>
+                <textarea
+                  maxLength={passwordHintMaxLength}
+                  placeholder="例如：生日年月日，纪念日或其他有意义的提示"
+                  rows={2}
+                  value={masterPasswordHint}
+                  onChange={(event) => setMasterPasswordHint(event.target.value)}
+                />
+              </label>
               <label className="remember-row">
                 <input
                   checked={rememberPassword}
@@ -797,43 +879,66 @@ export default function App() {
       {status?.has_vault && !status.unlocked ? (
         <section className="welcome-layout auth-only-layout">
           <section className="panel-card">
-            <h2>解锁本地保险库</h2>
-            <form className="stack-form" onSubmit={handleUnlock}>
-              <div className="unlock-form-row">
-                <PasswordField
-                  hideLabel
-                  label="主密码"
-                  value={unlockPassword}
-                  onChange={setUnlockPassword}
-                  placeholder="输入主密码"
-                  visible={Boolean(showPasswords.unlock)}
-                  onToggle={() => togglePasswordVisibility("unlock")}
-                />
-                <button className="primary unlock-submit" disabled={busy} type="submit">
-                  {busy ? "处理中..." : "解锁"}
-                </button>
-              </div>
-              <div className="unlock-options-row">
-                <label className="remember-row">
-                  <input
-                    checked={rememberPassword}
-                    onChange={(event) => setRememberPassword(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>记住主密码 3 天</span>
-                </label>
-                <div className="unlock-secondary-actions">
-                  <button className="text-danger-button" type="button" onClick={() => void handleResetVault()}>
-                    {confirmResetStep ? "确认重置本地保险库" : "忘记主密码，重置本地保险库"}
+            {confirmResetStep ? (
+              <div className="stack-form vault-reset-flow">
+                <div>
+                  <h2>重置本地保险库</h2>
+                  <p>
+                    将删除本机上的加密保险库文件与所有已保存条目。若未提前导出备份，数据无法恢复。确认后需要重新创建主密码。
+                  </p>
+                </div>
+                <div className="vault-reset-actions">
+                  <button className="secondary" disabled={busy} type="button" onClick={() => cancelVaultResetFlow()}>
+                    返回解锁
                   </button>
-                  {confirmResetStep ? (
-                    <button className="text-secondary-button" type="button" onClick={() => setConfirmResetStep(false)}>
-                      取消
-                    </button>
-                  ) : null}
+                  <button className="danger" disabled={busy} type="button" onClick={() => void handleConfirmResetVault()}>
+                    {busy ? "处理中..." : "确认重置本地保险库"}
+                  </button>
                 </div>
               </div>
-            </form>
+            ) : (
+              <>
+                <h2>解锁本地保险库</h2>
+                <form className="stack-form" onSubmit={handleUnlock}>
+                  {status.password_hint.trim() ? (
+                    <div className="password-hint-display" role="note">
+                      <strong>主密码提示</strong>
+                      <span>{status.password_hint.trim()}</span>
+                    </div>
+                  ) : null}
+                  <div className="unlock-form-row">
+                    <PasswordField
+                      hideLabel
+                      label="主密码"
+                      value={unlockPassword}
+                      onChange={setUnlockPassword}
+                      placeholder={`${masterPasswordCharLength} 位主密码`}
+                      visible={Boolean(showPasswords.unlock)}
+                      onToggle={() => togglePasswordVisibility("unlock")}
+                      maxLength={masterPasswordCharLength}
+                    />
+                    <button className="primary unlock-submit" disabled={busy} type="submit">
+                      {busy ? "处理中..." : "解锁"}
+                    </button>
+                  </div>
+                  <div className="unlock-options-row">
+                    <label className="remember-row">
+                      <input
+                        checked={rememberPassword}
+                        onChange={(event) => setRememberPassword(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>记住主密码 3 天</span>
+                    </label>
+                    <div className="unlock-secondary-actions">
+                      <button className="text-danger-button" type="button" onClick={() => startVaultResetFlow()}>
+                        忘记主密码，重置本地保险库
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </>
+            )}
           </section>
         </section>
       ) : null}
@@ -979,28 +1084,54 @@ export default function App() {
                 </section>
 
                 <section className="panel-section">
+                  <h3>主密码提示</h3>
+                  <p className="hint-field-note">解锁页会在主密码输入框上方显示以下内容。留空表示不显示。</p>
+                  <textarea
+                    maxLength={passwordHintMaxLength}
+                    placeholder="仅自己可辨别的提示……"
+                    rows={2}
+                    value={passwordHintDraft}
+                    onChange={(event) => setPasswordHintDraft(event.target.value)}
+                  />
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    type="button"
+                    onClick={() => void handleSavePasswordHint()}
+                  >
+                    {busy ? "处理中..." : "保存提示"}
+                  </button>
+                </section>
+
+                <section className="panel-section">
                   <h3>主密码</h3>
                   <form className="stack-form" onSubmit={handleChangeMasterPassword}>
                     <PasswordField
                       label="当前主密码"
                       value={changeCurrentPassword}
                       onChange={setChangeCurrentPassword}
+                      placeholder={`${masterPasswordCharLength} 位`}
                       visible={Boolean(showPasswords.changeCurrent)}
                       onToggle={() => togglePasswordVisibility("changeCurrent")}
+                      maxLength={masterPasswordCharLength}
                     />
                     <PasswordField
                       label="新主密码"
                       value={changeNewPassword}
                       onChange={setChangeNewPassword}
+                      placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
                       visible={Boolean(showPasswords.changeNew)}
                       onToggle={() => togglePasswordVisibility("changeNew")}
+                      maxLength={masterPasswordCharLength}
                     />
                     <PasswordField
                       label="确认新主密码"
                       value={changeConfirmPassword}
                       onChange={setChangeConfirmPassword}
+                      placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
                       visible={Boolean(showPasswords.changeConfirm)}
                       onToggle={() => togglePasswordVisibility("changeConfirm")}
+                      maxLength={masterPasswordCharLength}
                     />
                     <button className="primary" disabled={busy} type="submit">
                       {busy ? "处理中..." : "更新主密码"}

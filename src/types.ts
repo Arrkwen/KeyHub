@@ -2,6 +2,8 @@ export interface VaultStatus {
   has_vault: boolean;
   unlocked: boolean;
   entry_count: number;
+  /** Plaintext hint from vault metadata; visible before unlock when locked */
+  password_hint: string;
   app_data_dir: string | null;
   vault_path: string | null;
 }

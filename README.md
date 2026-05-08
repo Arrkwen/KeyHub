@@ -14,6 +14,8 @@
 
 - `src/`：React + TypeScript 前端界面和本地数据交互逻辑
 - `src-tauri/src/`：Tauri Rust 命令层、本地保险库存取、加密实现
+- `src-tauri/app-icon-source.png`：桌面图标源图（1024×）；更新后执行 `npm run icons` 重写 `icons/` 下的 `.icns` / `.ico` / PNG
+- `src-tauri/scripts/prepare_app_icon_source.py`：将任意比例图源 letterbox 到 1024 方形（边缘采样底色），写入 `app-icon-source.png`
 
 ## 构建教程
 
@@ -119,7 +121,7 @@ npm run tauri dev
 
 ### 7. 首次使用应用
 
-1. 设置主密码并创建本地保险库
+1. 设置 **10 位**的主密码（按字符计，中英文等均算 1 位）并创建本地保险库，两次输入须一致。
 2. 可选开启“记住主密码 3 天”
 3. 进入列表页后添加平台账号、密码、API Key 或 Secret
 4. 测试复制、搜索、编辑，以及安全设置中的本地数据导出 / 加载
@@ -133,6 +135,22 @@ npm run tauri build
 ```
 
 构建产物会出现在 `src-tauri/target/` 下面。
+
+### 更新应用图标
+
+```bash
+python3 src-tauri/scripts/prepare_app_icon_source.py /path/to/your.png
+npm run icons
+```
+
+第二行会从 `src-tauri/app-icon-source.png` 重新生成 `src-tauri/icons/` 下当前 `tauri.conf.json` 用到的文件（macOS `.icns`、Windows `.ico` 与三张 PNG）。
+
+源图会按短边比例做圆角裁切，**圆角以外为透明像素**（不再用接近背景的实色填角，避免在 Dock/访达里看起来像方块）。若你已有当前的 `app-icon-source.png`、只想补圆角而不换图，可执行：
+
+```bash
+python3 src-tauri/scripts/prepare_app_icon_source.py --round-existing
+npm run icons
+```
 
 ## 本地数据导出与加载
 

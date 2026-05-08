@@ -42,6 +42,9 @@ pub struct VaultFile {
     pub version: u32,
     pub created_at: String,
     pub updated_at: String,
+    /// Plaintext hint shown on the unlock screen; not secret. Omitted in older vault files.
+    #[serde(default)]
+    pub password_hint: String,
     pub kdf: KdfConfig,
     pub verification: EncryptedPayload,
     pub entries: Vec<EncryptedEntry>,
@@ -52,6 +55,8 @@ pub struct VaultStatus {
     pub has_vault: bool,
     pub unlocked: bool,
     pub entry_count: usize,
+    /// Shown while locked; plaintext in vault file.
+    pub password_hint: String,
     pub app_data_dir: Option<String>,
     pub vault_path: Option<String>,
 }
@@ -60,7 +65,13 @@ pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
 
-pub fn create_vault_file(password: &str) -> Result<(VaultFile, [u8; 32])> {
+const PASSWORD_HINT_MAX_CHARS: usize = 280;
+
+pub fn sanitize_password_hint(input: &str) -> String {
+    input.trim().chars().take(PASSWORD_HINT_MAX_CHARS).collect()
+}
+
+pub fn create_vault_file(password: &str, password_hint: &str) -> Result<(VaultFile, [u8; 32])> {
     let kdf = default_kdf_config();
     let key = derive_key(password, &kdf)?;
     let verification = encrypt_bytes(&key, VERIFICATION_BYTES)?;
@@ -71,6 +82,7 @@ pub fn create_vault_file(password: &str) -> Result<(VaultFile, [u8; 32])> {
             version: 1,
             created_at: now.clone(),
             updated_at: now,
+            password_hint: sanitize_password_hint(password_hint),
             kdf,
             verification,
             entries: Vec::new(),
@@ -209,7 +221,7 @@ mod tests {
 
     #[test]
     fn creates_and_decrypts_entry() {
-        let (mut vault, key) = create_vault_file("vault-password").unwrap();
+        let (mut vault, key) = create_vault_file("vault-password", "my hint").unwrap();
         let created = upsert_entry(
             &mut vault,
             &key,
@@ -226,6 +238,7 @@ mod tests {
         .unwrap();
 
         let decrypted = decrypt_entries(&vault, &key).unwrap();
+        assert_eq!(vault.password_hint, "my hint");
         assert_eq!(decrypted.len(), 1);
         assert_eq!(decrypted[0].id, created.id);
         assert_eq!(decrypted[0].platform, "OpenAI");
@@ -234,7 +247,7 @@ mod tests {
 
     #[test]
     fn changes_master_password() {
-        let (mut vault, key) = create_vault_file("old-password").unwrap();
+        let (mut vault, key) = create_vault_file("old-password", "").unwrap();
         upsert_entry(
             &mut vault,
             &key,
