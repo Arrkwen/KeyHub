@@ -24,6 +24,8 @@ import { messageKeyForSecretKind } from "./i18n/secretKind";
 const autoLockStorageKey = "keyhub:auto-lock-minutes";
 const clipboardStorageKey = "keyhub:clipboard-clear-seconds";
 const rememberedPasswordStorageKey = "keyhub:remembered-master-password";
+/** 上次会话在「已锁定」状态下结束则置位；下次启动不自动解锁（仍校验记住密码是否过期） */
+const blockAutoUnlockAfterLockStorageKey = "keyhub:block-auto-unlock-after-lock";
 const rememberedPasswordDurationMs = 3 * 24 * 60 * 60 * 1000;
 const themeStorageKey = "keyhub:theme";
 const passwordHintMaxLength = 280;
@@ -130,6 +132,18 @@ function saveRememberedPassword(password: string) {
 
 function clearRememberedPassword() {
   window.localStorage.removeItem(rememberedPasswordStorageKey);
+}
+
+function readBlockAutoUnlockAfterLock(): boolean {
+  return window.localStorage.getItem(blockAutoUnlockAfterLockStorageKey) === "1";
+}
+
+function setBlockAutoUnlockAfterLock(enabled: boolean) {
+  if (enabled) {
+    window.localStorage.setItem(blockAutoUnlockAfterLockStorageKey, "1");
+  } else {
+    window.localStorage.removeItem(blockAutoUnlockAfterLockStorageKey);
+  }
 }
 
 interface PasswordFieldProps {
@@ -347,12 +361,15 @@ export default function App() {
         setBanner(translateRef.current("banner.autoLoginExpired"));
       }
 
-      if (nextStatus.has_vault && remembered.password) {
+      const lockedAfterLastSession = readBlockAutoUnlockAfterLock();
+
+      if (nextStatus.has_vault && remembered.password && !lockedAfterLastSession) {
         try {
           const unlockedStatus = await unlockVault(remembered.password);
           setStatus(unlockedStatus);
           setSessionPassword(remembered.password);
           await refreshEntries();
+          setBlockAutoUnlockAfterLock(false);
           setBanner(translateRef.current("banner.autoLoggedIn"));
         } catch (reason) {
           console.error("auto unlock failed", reason);
@@ -472,6 +489,8 @@ export default function App() {
         clearRememberedPassword();
       }
 
+      setBlockAutoUnlockAfterLock(false);
+
       setMasterPassword("");
       setConfirmPassword("");
       setMasterPasswordHint("");
@@ -517,6 +536,8 @@ export default function App() {
         clearRememberedPassword();
       }
 
+      setBlockAutoUnlockAfterLock(false);
+
       setUnlockPassword("");
       setBanner(t("banner.unlocked"));
     } catch (reason) {
@@ -537,6 +558,7 @@ export default function App() {
       setEditorOpen(false);
       setSettingsOpen(false);
       if (!nextStatus.unlocked) {
+        setBlockAutoUnlockAfterLock(true);
         setBanner(autoLocked ? translateRef.current("banner.lockedIdle") : translateRef.current("banner.locked"));
       }
     } catch (reason) {
@@ -691,6 +713,7 @@ export default function App() {
       setRememberPassword(false);
       setSessionPassword(null);
       setUnlockPassword("");
+      setBlockAutoUnlockAfterLock(true);
       setEntries([]);
       setSessionPassword(null);
       setEditingEntryId(null);
@@ -746,6 +769,7 @@ export default function App() {
       setConfirmResetStep(false);
       clearRememberedPassword();
       setRememberPassword(false);
+      setBlockAutoUnlockAfterLock(false);
       setBanner(t("banner.vaultReset"));
     } catch (reason) {
       console.error("reset vault failed", reason);
