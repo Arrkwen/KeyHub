@@ -10,15 +10,15 @@ A desktop password vault focused on purely local master-password mode. Suitable 
 - **Client-side crypto:** derive keys from the master password with **Argon2id** locally; entries encrypted with **AES-256-GCM**
 - **Local backup:** export encrypted vault data and reload it from a file
 - **Safety UX:** manual lock, idle auto-lock, and timed clipboard clearing after copy
+- **UI language:** switch between Chinese (**中文**) and **English** using the dropdown beside the theme control in the header; the choice is persisted under the `localStorage` key `keyhub:locale`
 
 ## Project layout
 
 - `src/`: React + TypeScript UI and local data glue
 - `src-tauri/src/`: Tauri Rust commands, vault I/O, and crypto
 - `src-tauri/app-icon-source.png`: 1024 px desktop icon master; after changes run `npm run icons` to regenerate `.icns` / `.ico` / PNG files under `icons/`
+- `src/i18n/`: locale strings and `I18nProvider` (default language follows the system; you can override in-app)
 - `src-tauri/scripts/prepare_app_icon_source.py`: letterbox arbitrary aspect-ratio art to a 1024 square (edge-sampled matte) and write `app-icon-source.png`
-
-## Build guide
 
 Use this flow the first time you run the project on a machine.
 
@@ -125,7 +125,7 @@ On first launch you should see the local vault creation screen.
 1. Set a master password (**10 characters**; each counts as one, including Chinese and Latin letters), create the local vault, and enter it twice identically.
 2. Optionally enable **Remember master password for 3 days**.
 3. On the list screen, add platform accounts, passwords, API keys, or secrets.
-4. Try copy, search, edit, and under **安全设置** (security settings) use **导出本地数据** / **加载本地数据**.
+4. Try copy, search, edit, and open **Security** in the header for auto-lock, clipboard timing, and master-password options. Use **Sync data** → **Export vault** / **Import vault** to exercise local backup flows.
 
 ### 8. Build a release installer
 
@@ -155,12 +155,14 @@ npm run icons
 
 ## Exporting and importing local data
 
-The UI is currently labeled in Chinese; match the following strings in the app:
+Labels below match the **English** UI. If your app is in Chinese, the same controls appear as **数据同步**, **导出本地数据**, and **加载本地数据** (or switch the header language to **English** first).
 
-1. Open **数据同步** from the top-right.
-2. Tap **导出本地数据** — a native save dialog lets you choose folder and filename.
-3. To restore, tap **加载本地数据**.
-4. Pick the backup file, then unlock with the **same master password** that encrypted that backup.
+1. Click **Sync data** in the top-right of the main window.
+2. Choose **Export vault** — a native save dialog lets you pick folder and filename.
+3. To restore, choose **Import vault** and select the backup file.
+4. Unlock with the **same master password** that was used for that backup.
+
+When the vault was last left **locked** (manual lock or idle auto-lock), the app will not auto-unlock on the next launch even if “remember password” is enabled, until you enter the master password again on the unlock screen.
 
 ## Troubleshooting
 
