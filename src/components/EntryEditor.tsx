@@ -1,5 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import type { EntryInput, VaultEntry } from "../types";
+import { useI18n } from "../i18n";
+import { SECRET_KIND_MESSAGE_KEY, SECRET_KIND_ORDER } from "../i18n/secretKind";
 
 interface EntryEditorProps {
   entry: VaultEntry | null;
@@ -18,10 +20,13 @@ const emptyDraft: EntryInput = {
 };
 
 export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorProps) {
+  const { t, locale } = useI18n();
   const [draft, setDraft] = useState<EntryInput>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
 
   useEffect(() => {
     if (!entry) {
@@ -49,7 +54,7 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
     setError(null);
 
     if (!draft.platform.trim() || !draft.account.trim() || !draft.secret.trim()) {
-      setError("平台、账号和密钥不能为空。");
+      setError(t("errors.requiredFields"));
       return;
     }
 
@@ -63,7 +68,7 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
         tags: draft.tags
       });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "保存条目失败。");
+      setError(reason instanceof Error ? reason.message : t("errors.saveEntry"));
     } finally {
       setSaving(false);
     }
@@ -73,48 +78,53 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
     <form className="editor-card" onSubmit={handleSubmit}>
       <div className="section-header">
         <div>
-          <h2>{entry ? "编辑条目" : "新建条目"}</h2>
-          <p>适合保存大模型平台账号、密码、API Key、Secret 和备注。</p>
+          <h2>{entry ? t("editor.titleEdit") : t("editor.titleNew")}</h2>
+          <p>{t("editor.intro")}</p>
         </div>
         {entry ? (
-          <span className="badge">最近更新 {new Date(entry.updated_at).toLocaleString()}</span>
+          <span className="badge">
+            {t("editor.updatedBadge", {
+              datetime: new Date(entry.updated_at).toLocaleString(dateLocale)
+            })}
+          </span>
         ) : null}
       </div>
 
       <label>
-        平台
+        {t("editor.platform")}
         <input
           value={draft.platform}
           onChange={(event) => setDraft((prev) => ({ ...prev, platform: event.target.value }))}
-          placeholder="例如 OpenAI、Claude、通义千问"
+          placeholder={t("editor.platformPlaceholder")}
         />
       </label>
 
       <label>
-        账号 / Key 名称
+        {t("editor.accountLabel")}
         <input
           value={draft.account}
           onChange={(event) => setDraft((prev) => ({ ...prev, account: event.target.value }))}
-          placeholder="例如 xiaokun@example.com 或 production-key"
+          placeholder={t("editor.accountPlaceholder")}
         />
       </label>
 
       <div className="grid-two">
         <label>
-          类型
+          {t("editor.secretType")}
           <select
             value={draft.secret_kind}
             onChange={(event) => setDraft((prev) => ({ ...prev, secret_kind: event.target.value }))}
           >
-            <option value="password">密码</option>
-            <option value="api-key">API Key</option>
-            <option value="secret">Secret</option>
-            <option value="token">Token</option>
+            {SECRET_KIND_ORDER.map((value) => (
+              <option key={value} value={value}>
+                {t(SECRET_KIND_MESSAGE_KEY[value])}
+              </option>
+            ))}
           </select>
         </label>
 
         <label>
-          标签
+          {t("editor.tags")}
           <input
             value={tagsText}
             onChange={(event) =>
@@ -126,28 +136,28 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
                   .filter(Boolean)
               }))
             }
-            placeholder="例如 生产环境, 计费, 团队共享"
+            placeholder={t("editor.tagsPlaceholder")}
           />
         </label>
       </div>
 
       <label>
-        密钥 / 密码
+        {t("editor.secretBody")}
         <textarea
           rows={4}
           value={draft.secret}
           onChange={(event) => setDraft((prev) => ({ ...prev, secret: event.target.value }))}
-          placeholder="输入需要加密保存的敏感信息"
+          placeholder={t("editor.secretBodyPlaceholder")}
         />
       </label>
 
       <label>
-        备注
+        {t("editor.note")}
         <textarea
           rows={5}
           value={draft.note}
           onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))}
-          placeholder="可记录申请入口、使用限制、到期时间等说明"
+          placeholder={t("editor.notePlaceholder")}
         />
       </label>
 
@@ -155,10 +165,10 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
 
       <div className="editor-actions">
         <button className="primary" disabled={saving} type="submit">
-          {saving ? "保存中..." : "保存条目"}
+          {saving ? t("editor.saving") : t("editor.save")}
         </button>
         <button className="secondary" type="button" onClick={onClose}>
-          取消
+          {t("editor.cancel")}
         </button>
         {entry ? (
           <>
@@ -174,11 +184,11 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
                 void onDelete(entry.id);
               }}
             >
-              {confirmDelete ? "确认删除条目" : "删除条目"}
+              {confirmDelete ? t("editor.confirmDelete") : t("editor.delete")}
             </button>
             {confirmDelete ? (
               <button className="secondary" type="button" onClick={() => setConfirmDelete(false)}>
-                取消删除
+                {t("editor.cancelDelete")}
               </button>
             ) : null}
           </>

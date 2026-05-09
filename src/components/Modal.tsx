@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useI18n } from "../i18n";
 
 interface ModalProps {
   title: string;
@@ -8,6 +9,8 @@ interface ModalProps {
 }
 
 export function Modal({ title, description, children, onClose }: ModalProps) {
+  const { t } = useI18n();
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-card">
@@ -17,7 +20,7 @@ export function Modal({ title, description, children, onClose }: ModalProps) {
             {description ? <p>{description}</p> : null}
           </div>
           <button className="secondary" type="button" onClick={onClose}>
-            关闭
+            {t("common.close")}
           </button>
         </div>
         {children}

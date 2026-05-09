@@ -399,7 +399,6 @@ label {
 }
 
 .app-header h1,
-.splash-card h1,
 .panel-card h2,
 .editor-card h2,
 .sidebar-card h2,
@@ -411,8 +410,7 @@ label {
 .panel-card p,
 .editor-card p,
 .sidebar-card p,
-.settings-card p,
-.splash-card p {
+.settings-card p {
   margin: 0;
   color: var(--color-text-muted);
 }
@@ -458,6 +456,21 @@ label {
   display: block;
   width: 26px;
   height: 26px;
+}
+
+.locale-select {
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-panel);
+  color: var(--color-text-base);
+  max-width: 120px;
+}
+
+.locale-select:focus {
+  outline: 2px solid var(--color-accent-faint);
+  outline-offset: 1px;
 }
 
 .toast-stack {
@@ -533,14 +546,49 @@ label {
 .panel-card,
 .sidebar-card,
 .editor-card,
-.settings-card,
-.splash-card {
+.settings-card {
   padding: 24px;
   border-radius: 24px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   box-shadow: var(--color-shadow-card);
   backdrop-filter: blur(18px);
+}
+
+.loading-boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+}
+
+.loading-boot p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  text-align: center;
+  max-width: 220px;
+}
+
+.loading-spinner-small {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--color-border);
+  border-top-color: var(--color-text-muted);
+  border-radius: 50%;
+  animation: keyhub-spin 0.65s linear infinite;
+}
+
+@keyframes keyhub-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .panel-card,

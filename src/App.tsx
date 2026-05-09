@@ -18,6 +18,8 @@ import {
   unlockVault
 } from "./lib/tauri";
 import type { EntryInput, VaultEntry, VaultStatus } from "./types";
+import { type Locale, useI18n } from "./i18n";
+import { messageKeyForSecretKind } from "./i18n/secretKind";
 
 const autoLockStorageKey = "keyhub:auto-lock-minutes";
 const clipboardStorageKey = "keyhub:clipboard-clear-seconds";
@@ -151,6 +153,8 @@ function PasswordField({
   hideLabel = false,
   maxLength
 }: PasswordFieldProps) {
+  const { t } = useI18n();
+
   return (
     <label className={hideLabel ? "password-field compact-password-field" : "password-field"}>
       {hideLabel ? <span className="sr-only">{label}</span> : label}
@@ -164,7 +168,7 @@ function PasswordField({
           placeholder={placeholder}
         />
         <button
-          aria-label={visible ? `隐藏${label}` : `显示${label}`}
+          aria-label={visible ? t("passwordToggle.hide", { label }) : t("passwordToggle.show", { label })}
           className="password-toggle icon-password-toggle"
           type="button"
           onClick={onToggle}
@@ -233,6 +237,10 @@ function PasswordField({
 }
 
 export default function App() {
+  const { t, locale, setLocale } = useI18n();
+  const translateRef = useRef(t);
+  translateRef.current = t;
+
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [search, setSearch] = useState("");
@@ -316,6 +324,14 @@ export default function App() {
     [entries, editingEntryId]
   );
 
+  const secretKindLabel = useCallback(
+    (kind: string) => {
+      const key = messageKeyForSecretKind(kind);
+      return key ? t(key) : kind;
+    },
+    [t]
+  );
+
   const bootstrap = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -328,7 +344,7 @@ export default function App() {
       setRememberPassword(Boolean(remembered.password));
 
       if (remembered.expired) {
-        setBanner("自动登录已过期，请重新输入主密码。");
+        setBanner(translateRef.current("banner.autoLoginExpired"));
       }
 
       if (nextStatus.has_vault && remembered.password) {
@@ -337,17 +353,17 @@ export default function App() {
           setStatus(unlockedStatus);
           setSessionPassword(remembered.password);
           await refreshEntries();
-          setBanner("已自动登录 KeyHub。");
+          setBanner(translateRef.current("banner.autoLoggedIn"));
         } catch (reason) {
           console.error("auto unlock failed", reason);
           clearRememberedPassword();
           setRememberPassword(false);
-          setError("自动登录失败，请重新输入主密码。");
+          setError(translateRef.current("errors.autoLoginFailed"));
           await refreshStatus();
         }
       }
     } catch (reason) {
-      setError(getErrorMessage(reason, "初始化应用失败。"));
+      setError(getErrorMessage(reason, translateRef.current("errors.bootstrap")));
     } finally {
       setLoading(false);
     }
@@ -423,12 +439,17 @@ export default function App() {
     setBanner(null);
 
     if (!isValidMasterPasswordLength(masterPassword)) {
-      setError(`主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(masterPassword)} 位）。`);
+      setError(
+        t("errors.masterLength", {
+          required: masterPasswordCharLength,
+          current: masterPasswordCharCount(masterPassword)
+        })
+      );
       return;
     }
 
     if (masterPassword !== confirmPassword) {
-      setError("两次输入的主密码不一致。");
+      setError(t("errors.masterMismatch"));
       return;
     }
 
@@ -454,10 +475,10 @@ export default function App() {
       setMasterPassword("");
       setConfirmPassword("");
       setMasterPasswordHint("");
-      setBanner("本地保险库已创建并解锁。");
+      setBanner(t("banner.vaultReady"));
     } catch (reason) {
       console.error("create vault failed", reason);
-      setError(getErrorMessage(reason, "创建本地保险库失败。"));
+      setError(getErrorMessage(reason, t("errors.createVault")));
     } finally {
       setBusy(false);
     }
@@ -469,12 +490,17 @@ export default function App() {
     setBanner(null);
 
     if (!unlockPassword.trim()) {
-      setError("请输入主密码。");
+      setError(t("errors.enterMasterPassword"));
       return;
     }
 
     if (!isValidMasterPasswordLength(unlockPassword)) {
-      setError(`主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(unlockPassword)} 位）。`);
+      setError(
+        t("errors.masterLength", {
+          required: masterPasswordCharLength,
+          current: masterPasswordCharCount(unlockPassword)
+        })
+      );
       return;
     }
 
@@ -492,10 +518,10 @@ export default function App() {
       }
 
       setUnlockPassword("");
-      setBanner("已解锁本地保险库。");
+      setBanner(t("banner.unlocked"));
     } catch (reason) {
       console.error("unlock vault failed", reason);
-      setError(getErrorMessage(reason, "解锁失败。"));
+      setError(getErrorMessage(reason, t("errors.unlockFailed")));
     } finally {
       setBusy(false);
     }
@@ -511,11 +537,11 @@ export default function App() {
       setEditorOpen(false);
       setSettingsOpen(false);
       if (!nextStatus.unlocked) {
-        setBanner(autoLocked ? "长时间无操作，本地保险库已锁定。" : "本地保险库已锁定。");
+        setBanner(autoLocked ? translateRef.current("banner.lockedIdle") : translateRef.current("banner.locked"));
       }
     } catch (reason) {
       console.error("lock vault failed", reason);
-      setError(getErrorMessage(reason, "锁定失败。"));
+      setError(getErrorMessage(reason, translateRef.current("errors.lockVault")));
     }
   }
 
@@ -527,10 +553,10 @@ export default function App() {
       await refreshEntries();
       setEditingEntryId(saved.id);
       setEditorOpen(false);
-      setBanner(`已保存 ${saved.platform} 条目。`);
+      setBanner(t("banner.entrySaved", { name: saved.platform }));
     } catch (reason) {
       console.error("save entry failed", reason);
-      setError(getErrorMessage(reason, "保存条目失败。"));
+      setError(getErrorMessage(reason, t("errors.saveEntry")));
     }
   }
 
@@ -542,10 +568,10 @@ export default function App() {
       await refreshEntries();
       setEditingEntryId(null);
       setEditorOpen(false);
-      setBanner("条目已删除。");
+      setBanner(t("banner.entryRemoved"));
     } catch (reason) {
       console.error("delete entry failed", reason);
-      setError(getErrorMessage(reason, "删除条目失败。"));
+      setError(getErrorMessage(reason, t("errors.removeEntry")));
     }
   }
 
@@ -554,11 +580,11 @@ export default function App() {
       await copySecret(value, clearAfterCopy ? clipboardClearSeconds : 0);
       setBanner(
         clearAfterCopy
-          ? `${label}已复制，将在 ${clipboardClearSeconds} 秒后尝试清空剪贴板。`
-          : `${label}已复制到剪贴板。`
+          ? t("banner.copiedClears", { label, seconds: clipboardClearSeconds })
+          : t("banner.copiedPlain", { label })
       );
     } catch (reason) {
-      setError(getErrorMessage(reason, "复制失败。"));
+      setError(getErrorMessage(reason, t("errors.copy")));
     }
   }
 
@@ -569,10 +595,10 @@ export default function App() {
     try {
       const nextStatus = await setVaultPasswordHint(passwordHintDraft);
       setStatus(nextStatus);
-      setBanner("主密码提示已保存。");
+      setBanner(t("banner.hintSaved"));
     } catch (reason) {
       console.error("save password hint failed", reason);
-      setError(getErrorMessage(reason, "保存主密码提示失败。"));
+      setError(getErrorMessage(reason, t("errors.saveHint")));
     } finally {
       setBusy(false);
     }
@@ -585,13 +611,16 @@ export default function App() {
 
     if (!isValidMasterPasswordLength(changeNewPassword)) {
       setError(
-        `新主密码必须为 ${masterPasswordCharLength} 位字符（当前 ${masterPasswordCharCount(changeNewPassword)} 位）。`
+        t("errors.newMasterLength", {
+          required: masterPasswordCharLength,
+          current: masterPasswordCharCount(changeNewPassword)
+        })
       );
       return;
     }
 
     if (changeNewPassword !== changeConfirmPassword) {
-      setError("两次输入的新主密码不一致。");
+      setError(t("errors.newMasterMismatch"));
       return;
     }
 
@@ -610,10 +639,10 @@ export default function App() {
         clearRememberedPassword();
       }
 
-      setBanner("主密码已更新。");
+      setBanner(t("banner.masterUpdated"));
     } catch (reason) {
       console.error("change master password failed", reason);
-      setError(getErrorMessage(reason, "修改主密码失败。"));
+      setError(getErrorMessage(reason, t("errors.changeMaster")));
     } finally {
       setBusy(false);
     }
@@ -627,14 +656,14 @@ export default function App() {
       const date = new Date().toISOString().slice(0, 10);
       const savedPath = await saveExportedBackup(snapshot, `keyhub-local-backup-${date}.json`);
       if (!savedPath) {
-        setBanner("已取消导出。");
+        setBanner(t("banner.exportCancelled"));
         return;
       }
 
-      setBanner(`本地数据已导出到：${savedPath}`);
+      setBanner(t("banner.exportedTo", { path: savedPath }));
     } catch (reason) {
       console.error("export local data failed", reason);
-      setError(getErrorMessage(reason, "导出本地数据失败。"));
+      setError(getErrorMessage(reason, t("errors.export")));
     } finally {
       setBusy(false);
     }
@@ -669,10 +698,10 @@ export default function App() {
       setSettingsOpen(false);
       setDataSyncOpen(false);
       await refreshStatus();
-      setBanner("本地数据已加载，请使用对应主密码解锁。");
+      setBanner(t("banner.importLoaded"));
     } catch (reason) {
       console.error("import local data failed", reason);
-      setError(getErrorMessage(reason, "加载本地数据失败。"));
+      setError(getErrorMessage(reason, t("errors.import")));
     } finally {
       setBusy(false);
     }
@@ -717,10 +746,10 @@ export default function App() {
       setConfirmResetStep(false);
       clearRememberedPassword();
       setRememberPassword(false);
-      setBanner("本地保险库已重置。");
+      setBanner(t("banner.vaultReset"));
     } catch (reason) {
       console.error("reset vault failed", reason);
-      setError(getErrorMessage(reason, "重置本地保险库失败。"));
+      setError(getErrorMessage(reason, t("errors.resetVault")));
     } finally {
       setBusy(false);
     }
@@ -739,9 +768,9 @@ export default function App() {
   if (loading) {
     return (
       <main className="app-shell centered">
-        <div className="splash-card">
-          <h1>KeyHub</h1>
-          <p>正在加载本地保险库...</p>
+        <div className="loading-boot" aria-busy="true" aria-live="polite">
+          <div className="loading-spinner-small" aria-hidden />
+          <p>{t("loading.loadingVault")}</p>
         </div>
       </main>
     );
@@ -755,9 +784,9 @@ export default function App() {
           <div className="header-title-row">
             <h1>KeyHub</h1>
             <button
-              aria-label={theme === "dark" ? "切换到白天模式" : "切换到黑夜模式"}
+              aria-label={theme === "dark" ? t("theme.switchToLight") : t("theme.switchToDark")}
               className="theme-toggle"
-              title={theme === "dark" ? "白天模式" : "黑夜模式"}
+              title={theme === "dark" ? t("theme.light") : t("theme.dark")}
               type="button"
               onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
             >
@@ -785,20 +814,33 @@ export default function App() {
                 </svg>
               )}
             </button>
+            <label className="sr-only" htmlFor="keyhub-locale-select">
+              {t("language.switch")}
+            </label>
+            <select
+              id="keyhub-locale-select"
+              aria-label={t("language.switch")}
+              className="locale-select"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as Locale)}
+            >
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
           </div>
-          <p>适合保存各类大模型平台账号、密码、API Key、Secret 和备注信息。</p>
+          <p>{t("header.tagline")}</p>
         </div>
         <div className="header-actions">
           {status?.unlocked ? (
             <>
               <button className="secondary" type="button" onClick={() => setDataSyncOpen(true)}>
-                数据同步
+                {t("nav.dataSync")}
               </button>
               <button className="secondary" type="button" onClick={() => setSettingsOpen(true)}>
-                安全设置
+                {t("nav.securitySettings")}
               </button>
               <button className="secondary" type="button" onClick={() => void handleLock()}>
-                立即锁定
+                {t("nav.lockNow")}
               </button>
             </>
           ) : null}
@@ -811,7 +853,7 @@ export default function App() {
             <div className="message-banner success">
               <span>{banner}</span>
               <button className="toast-close" type="button" onClick={() => setBanner(null)}>
-                关闭
+                {t("common.close")}
               </button>
             </div>
           ) : null}
@@ -819,7 +861,7 @@ export default function App() {
             <div className="message-banner error">
               <span>{error}</span>
               <button className="toast-close" type="button" onClick={() => setError(null)}>
-                关闭
+                {t("common.close")}
               </button>
             </div>
           ) : null}
@@ -829,32 +871,32 @@ export default function App() {
       {!status?.has_vault ? (
         <section className="welcome-layout auth-only-layout">
           <section className="panel-card">
-            <h2>创建本地保险库</h2>
+            <h2>{t("createVault.title")}</h2>
             <form className="stack-form" onSubmit={handleCreateVault}>
               <PasswordField
-                label="主密码"
+                label={t("createVault.masterPassword")}
                 value={masterPassword}
                 onChange={setMasterPassword}
-                placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
+                placeholder={t("createVault.placeholderPassword", { n: masterPasswordCharLength })}
                 visible={Boolean(showPasswords.createMaster)}
                 onToggle={() => togglePasswordVisibility("createMaster")}
                 maxLength={masterPasswordCharLength}
               />
               <PasswordField
-                label="确认主密码"
+                label={t("createVault.confirmMasterPassword")}
                 value={confirmPassword}
                 onChange={setConfirmPassword}
-                placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
+                placeholder={t("createVault.placeholderPassword", { n: masterPasswordCharLength })}
                 visible={Boolean(showPasswords.createConfirm)}
                 onToggle={() => togglePasswordVisibility("createConfirm")}
                 maxLength={masterPasswordCharLength}
               />
               <label>
-                主密码提示（可选）
-                <p className="hint-field-note">当你忘记主密码时，能够通过提示找回。</p>
+                {t("createVault.hintLabel")}
+                <p className="hint-field-note">{t("createVault.hintNote")}</p>
                 <textarea
                   maxLength={passwordHintMaxLength}
-                  placeholder="例如：生日年月日，纪念日或其他有意义的提示"
+                  placeholder={t("createVault.hintPlaceholder")}
                   rows={2}
                   value={masterPasswordHint}
                   onChange={(event) => setMasterPasswordHint(event.target.value)}
@@ -866,10 +908,10 @@ export default function App() {
                   onChange={(event) => setRememberPassword(event.target.checked)}
                   type="checkbox"
                 />
-                <span>记住主密码 3 天</span>
+                <span>{t("createVault.remember3Days")}</span>
               </label>
               <button className="primary" disabled={busy} type="submit">
-                {busy ? "处理中..." : "创建并进入"}
+                {busy ? t("common.processing") : t("createVault.submit")}
               </button>
             </form>
           </section>
@@ -882,43 +924,41 @@ export default function App() {
             {confirmResetStep ? (
               <div className="stack-form vault-reset-flow">
                 <div>
-                  <h2>重置本地保险库</h2>
-                  <p>
-                    将删除本机上的加密保险库文件与所有已保存条目。若未提前导出备份，数据无法恢复。确认后需要重新创建主密码。
-                  </p>
+                  <h2>{t("resetVault.title")}</h2>
+                  <p>{t("resetVault.warning")}</p>
                 </div>
                 <div className="vault-reset-actions">
                   <button className="secondary" disabled={busy} type="button" onClick={() => cancelVaultResetFlow()}>
-                    返回解锁
+                    {t("resetVault.backUnlock")}
                   </button>
                   <button className="danger" disabled={busy} type="button" onClick={() => void handleConfirmResetVault()}>
-                    {busy ? "处理中..." : "确认重置本地保险库"}
+                    {busy ? t("common.processing") : t("resetVault.confirm")}
                   </button>
                 </div>
               </div>
             ) : (
               <>
-                <h2>解锁本地保险库</h2>
+                <h2>{t("unlock.title")}</h2>
                 <form className="stack-form" onSubmit={handleUnlock}>
                   {status.password_hint.trim() ? (
                     <div className="password-hint-display" role="note">
-                      <strong>主密码提示</strong>
+                      <strong>{t("unlock.masterPasswordHint")}</strong>
                       <span>{status.password_hint.trim()}</span>
                     </div>
                   ) : null}
                   <div className="unlock-form-row">
                     <PasswordField
                       hideLabel
-                      label="主密码"
+                      label={t("createVault.masterPassword")}
                       value={unlockPassword}
                       onChange={setUnlockPassword}
-                      placeholder={`${masterPasswordCharLength} 位主密码`}
+                      placeholder={t("unlock.placeholderPassword", { n: masterPasswordCharLength })}
                       visible={Boolean(showPasswords.unlock)}
                       onToggle={() => togglePasswordVisibility("unlock")}
                       maxLength={masterPasswordCharLength}
                     />
                     <button className="primary unlock-submit" disabled={busy} type="submit">
-                      {busy ? "处理中..." : "解锁"}
+                      {busy ? t("common.processing") : t("unlock.submit")}
                     </button>
                   </div>
                   <div className="unlock-options-row">
@@ -928,11 +968,11 @@ export default function App() {
                         onChange={(event) => setRememberPassword(event.target.checked)}
                         type="checkbox"
                       />
-                      <span>记住主密码 3 天</span>
+                      <span>{t("unlock.remember3Days")}</span>
                     </label>
                     <div className="unlock-secondary-actions">
                       <button className="text-danger-button" type="button" onClick={() => startVaultResetFlow()}>
-                        忘记主密码，重置本地保险库
+                        {t("unlock.forgotReset")}
                       </button>
                     </div>
                   </div>
@@ -949,29 +989,29 @@ export default function App() {
             <div className="vault-toolbar">
               <div className="vault-toolbar-main">
                 <label className="vault-search">
-                  搜索
+                  {t("search.label")}
                   <input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="平台、类型、账号、标签"
+                    placeholder={t("search.placeholder")}
                   />
                 </label>
               </div>
               <div className="vault-toolbar-actions">
-                <span className="badge">{filteredEntries.length} / {entries.length} 条</span>
+                <span className="badge">{t("entries.summary", { shown: filteredEntries.length, total: entries.length })}</span>
                 <button className="primary" type="button" onClick={openNewEntryModal}>
-                  新建条目
+                  {t("entries.new")}
                 </button>
               </div>
             </div>
 
             <section className="vault-table-card">
               <div className="vault-table-header">
-                <div className="vault-header-cell">平台名</div>
-                <div className="vault-header-cell">类型</div>
-                <div className="vault-header-cell">账号名</div>
-                <div className="vault-header-cell">密码 / Key</div>
-                <div className="vault-header-cell vault-header-actions">操作</div>
+                <div className="vault-header-cell">{t("table.platform")}</div>
+                <div className="vault-header-cell">{t("table.kind")}</div>
+                <div className="vault-header-cell">{t("table.account")}</div>
+                <div className="vault-header-cell">{t("table.secret")}</div>
+                <div className="vault-header-cell vault-header-actions">{t("table.actions")}</div>
               </div>
               <div className="vault-table-body">
                 {filteredEntries.map((entry) => (
@@ -981,7 +1021,7 @@ export default function App() {
                       {entry.tags.length > 0 ? <small>{entry.tags.join(" / ")}</small> : null}
                     </div>
                     <div className="vault-cell">
-                      <span className="type-badge">{entry.secret_kind}</span>
+                      <span className="type-badge">{secretKindLabel(entry.secret_kind)}</span>
                     </div>
                     <div className="vault-cell vault-value-cell">
                       <code>{entry.account}</code>
@@ -993,27 +1033,27 @@ export default function App() {
                       <button
                         className="secondary"
                         type="button"
-                        onClick={() => void handleCopyValue("账号", entry.account)}
+                        onClick={() => void handleCopyValue(t("copy.account"), entry.account)}
                       >
-                        复制账号
+                        {t("row.copyAccount")}
                       </button>
                       <button
                         className="secondary"
                         type="button"
-                        onClick={() => void handleCopyValue("密码/密钥", entry.secret, true)}
+                        onClick={() => void handleCopyValue(t("copy.secret"), entry.secret, true)}
                       >
-                        复制密码
+                        {t("row.copySecret")}
                       </button>
                       <button className="primary" type="button" onClick={() => openEditEntryModal(entry.id)}>
-                        编辑
+                        {t("row.edit")}
                       </button>
                     </div>
                   </div>
                 ))}
                 {filteredEntries.length === 0 ? (
                   <div className="empty-table-state">
-                    <h3>还没有条目</h3>
-                    <p>点击右上角“新建条目”开始保存平台账号和 API 凭据。</p>
+                    <h3>{t("empty.entriesTitle")}</h3>
+                    <p>{t("empty.entriesHint")}</p>
                   </div>
                 ) : null}
               </div>
@@ -1022,8 +1062,8 @@ export default function App() {
 
           {editorOpen ? (
             <Modal
-              title={editingEntry ? `编辑 ${editingEntry.platform}` : "新建条目"}
-              description="只有点击编辑的条目才会展开详情，新建和编辑都以弹窗形式完成。"
+              title={editingEntry ? t("editor.modalTitleEdit", { name: editingEntry.platform }) : t("editor.modalTitleNew")}
+              description={t("editor.modalDescription")}
               onClose={() => setEditorOpen(false)}
             >
               <EntryEditor
@@ -1037,15 +1077,15 @@ export default function App() {
 
           {settingsOpen ? (
             <Modal
-              title="安全设置"
-              description="统一管理本地安全体验和主密码。"
+              title={t("settings.title")}
+              description={t("settings.description")}
               onClose={() => setSettingsOpen(false)}
             >
               <div className="settings-modal-content">
                 <section className="panel-section">
-                  <h3>桌面体验</h3>
+                  <h3>{t("settings.desktop")}</h3>
                   <label>
-                    自动锁定（分钟）
+                    {t("settings.autoLockMinutes")}
                     <input
                       type="number"
                       min={1}
@@ -1055,7 +1095,7 @@ export default function App() {
                     />
                   </label>
                   <label>
-                    复制密码后清空剪贴板（秒）
+                    {t("settings.clipboardClear")}
                     <input
                       type="number"
                       min={5}
@@ -1079,16 +1119,16 @@ export default function App() {
                       }}
                       type="checkbox"
                     />
-                    <span>记住主密码 3 天</span>
+                    <span>{t("createVault.remember3Days")}</span>
                   </label>
                 </section>
 
                 <section className="panel-section">
-                  <h3>主密码提示</h3>
-                  <p className="hint-field-note">解锁页会在主密码输入框上方显示以下内容。留空表示不显示。</p>
+                  <h3>{t("settings.masterHintSection")}</h3>
+                  <p className="hint-field-note">{t("settings.masterHintNote")}</p>
                   <textarea
                     maxLength={passwordHintMaxLength}
-                    placeholder="仅自己可辨别的提示……"
+                    placeholder={t("settings.masterHintPlaceholder")}
                     rows={2}
                     value={passwordHintDraft}
                     onChange={(event) => setPasswordHintDraft(event.target.value)}
@@ -1099,42 +1139,42 @@ export default function App() {
                     type="button"
                     onClick={() => void handleSavePasswordHint()}
                   >
-                    {busy ? "处理中..." : "保存提示"}
+                    {busy ? t("common.processing") : t("settings.saveHint")}
                   </button>
                 </section>
 
                 <section className="panel-section">
-                  <h3>主密码</h3>
+                  <h3>{t("settings.masterSection")}</h3>
                   <form className="stack-form" onSubmit={handleChangeMasterPassword}>
                     <PasswordField
-                      label="当前主密码"
+                      label={t("settings.currentMasterPassword")}
                       value={changeCurrentPassword}
                       onChange={setChangeCurrentPassword}
-                      placeholder={`${masterPasswordCharLength} 位`}
+                      placeholder={t("settings.placeholderNChars", { n: masterPasswordCharLength })}
                       visible={Boolean(showPasswords.changeCurrent)}
                       onToggle={() => togglePasswordVisibility("changeCurrent")}
                       maxLength={masterPasswordCharLength}
                     />
                     <PasswordField
-                      label="新主密码"
+                      label={t("settings.newMasterPassword")}
                       value={changeNewPassword}
                       onChange={setChangeNewPassword}
-                      placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
+                      placeholder={t("createVault.placeholderPassword", { n: masterPasswordCharLength })}
                       visible={Boolean(showPasswords.changeNew)}
                       onToggle={() => togglePasswordVisibility("changeNew")}
                       maxLength={masterPasswordCharLength}
                     />
                     <PasswordField
-                      label="确认新主密码"
+                      label={t("settings.confirmNewMasterPassword")}
                       value={changeConfirmPassword}
                       onChange={setChangeConfirmPassword}
-                      placeholder={`${masterPasswordCharLength} 位任意字符组成的密码`}
+                      placeholder={t("createVault.placeholderPassword", { n: masterPasswordCharLength })}
                       visible={Boolean(showPasswords.changeConfirm)}
                       onToggle={() => togglePasswordVisibility("changeConfirm")}
                       maxLength={masterPasswordCharLength}
                     />
                     <button className="primary" disabled={busy} type="submit">
-                      {busy ? "处理中..." : "更新主密码"}
+                      {busy ? t("common.processing") : t("settings.updateMasterPassword")}
                     </button>
                   </form>
                 </section>
@@ -1145,25 +1185,25 @@ export default function App() {
 
           {dataSyncOpen ? (
             <Modal
-              title="数据同步"
-              description="在本地设备之间通过导出和加载加密备份文件进行手动同步。"
+              title={t("dataSync.title")}
+              description={t("dataSync.description")}
               onClose={() => setDataSyncOpen(false)}
             >
               <div className="settings-modal-content">
                 <section className="panel-section">
-                  <h3>本地数据</h3>
+                  <h3>{t("dataSync.localData")}</h3>
                   <div className="meta-list">
-                    <span>导出时会打开系统保存对话框，可自定义保存目录和文件名。</span>
-                    <span>导出格式为 `.json` 本地加密备份文件，可用于手动备份。</span>
-                    <span>加载本地数据会直接替换当前保险库内容。</span>
-                    <span>加载后需要使用该数据对应的主密码重新解锁。</span>
+                    <span>{t("dataSync.bulletExportDialog")}</span>
+                    <span>{t("dataSync.bulletExportFormat")}</span>
+                    <span>{t("dataSync.bulletReplace")}</span>
+                    <span>{t("dataSync.bulletReunlock")}</span>
                   </div>
                   <div className="inline-actions">
                     <button className="primary" disabled={busy} type="button" onClick={() => void handleExportLocalData()}>
-                      导出本地数据
+                      {t("dataSync.export")}
                     </button>
                     <button className="secondary" disabled={busy} type="button" onClick={handleImportClick}>
-                      加载本地数据
+                      {t("dataSync.import")}
                     </button>
                   </div>
                 </section>
